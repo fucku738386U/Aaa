@@ -1,78 +1,86 @@
+name: Anonymous RDP
+
 on:
   push:
-    branches: [main]
   workflow_dispatch:
-  schedule:
-    - cron: '0 */20 * * *'
 
 jobs:
-  rdp-1:
-    runs-on: windows-latest
-    timeout-minutes: 300
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 360   # 6 hours maximum
+
     steps:
-    - uses: actions/checkout@v4
+    - name: Download ngrok
+      run: Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
 
-    - name: Setup RDP + Tools
+    - name: Extract ngrok
+      run: Expand-Archive -Path ngrok.zip -DestinationPath ./ngrok
+
+    - name: Auth ngrok
+      run: ./ngrok/ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+
+    - name: Enable RDP & Firewall
       run: |
-        # ---- RDP Enable + User Setup ----
-        choco install ngrok -y
-        ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 0
-        New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'LimitBlankPasswordUse' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
 
-        net user 1 "" /active:yes 2>$null
-        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "1" -ErrorAction SilentlyContinue
-        Add-LocalGroupMember -Group "Administrators" -Member "1" -ErrorAction SilentlyContinue
+    - name: Destroy password policy
+      run: |
+        secedit /export /cfg c:\secpol.cfg
+        (Get-Content c:\secpol.cfg) -replace 'PasswordComplexity = 1', 'PasswordComplexity = 0' | Set-Content c:\secpol.cfg
+        (Get-Content c:\secpol.cfg) -replace 'MinimumPasswordLength = .+', 'MinimumPasswordLength = 0' | Set-Content c:\secpol.cfg
+        (Get-Content c:\secpol.cfg) -replace 'MaximumPasswordAge = .+', 'MaximumPasswordAge = -1' | Set-Content c:\secpol.cfg
+        secedit /configure /db c:\windows\security\local.sdb /cfg c:\secpol.cfg /areas SECURITYPOLICY
+        Remove-Item c:\secpol.cfg -Force
+        Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse" -Value 0
+        Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "restrictanonymous" -Value 0
+        Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "restrictanonymoussam" -Value 0
+        Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Services\Netlogon\Parameters" -Name "DisablePasswordChange" -Value 1
 
-        # Auto Logon
-        $winlogon = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-        Set-ItemProperty -Path $winlogon -Name AutoAdminLogon -Value "1"
-        Set-ItemProperty -Path $winlogon -Name DefaultUserName -Value "1"
-        Set-ItemProperty -Path $winlogon -Name DefaultPassword -Value ""
-        Set-ItemProperty -Path $winlogon -Name DefaultDomainName -Value "."
-        Set-ItemProperty -Path $winlogon -Name ForceAutoLogon -Value "1"
+    - name: Create user "1" with password "1"
+      run: |
+        $pass = ConvertTo-SecureString "1" -AsPlainText -Force
+        Get-LocalUser -Name "1" -ErrorAction SilentlyContinue | Remove-LocalUser -ErrorAction SilentlyContinue
+        New-LocalUser -Name "1" -Password $pass -FullName "User1" -Description "RDP Access"
+        Add-LocalGroupMember -Group "Administrators" -Member "1"
+        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "1"
 
-        # Wallpaper + Clean
-        reg add "HKCU\Control Panel\Desktop" /v PaintDesktopVersion /t REG_DWORD /d 0 /f
-        reg add "HKU\.DEFAULT\Control Panel\Desktop" /v PaintDesktopVersion /t REG_DWORD /d 0 /f
-        $img = "C:\wallpaper.jpg"
-        Invoke-WebRequest -Uri "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1920&q=80" -OutFile $img -ErrorAction SilentlyContinue
-        if (Test-Path $img) {
-            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name Wallpaper -Value $img
-            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name WallpaperStyle -Value "2"
+    - name: Start ngrok tunnel and keep it alive for 6 hours
+      run: |
+        # Start ngrok in the background, logging output to a file
+        $ngrokLog = "$env:TEMP\ngrok.log"
+        $ngrokProcess = Start-Process -FilePath "./ngrok/ngrok.exe" -ArgumentList "tcp 3389" -PassThru -RedirectStandardOutput $ngrokLog -RedirectStandardError "$env:TEMP\ngrok.err"
+
+        # Give ngrok a few seconds to start
+        Start-Sleep -Seconds 5
+
+        # Fetch the public URL from the log (ngrok API output)
+        $url = (Get-Content $ngrokLog | Select-String -Pattern "tcp://.*\.ngrok\.io" | Select-Object -First 1).Matches.Value
+        if ($url) {
+          Write-Host "##[group]RDP Access"
+          Write-Host "Username: 1"
+          Write-Host "Password: 1"
+          Write-Host "ngrok URL: $url"
+          Write-Host "##[endgroup]"
+        } else {
+          Write-Host "Could not retrieve ngrok URL. Check logs."
         }
 
-        # ---- Tor Browser (Latest) ----
-        $torUrl = "https://www.torproject.org/dist/torbrowser/15.0.0/tor-browser-windows-x86_64-portable.exe"
-        Invoke-WebRequest -Uri $torUrl -OutFile "$env:TEMP\tor-install.exe" -ErrorAction Stop
-        Start-Process -FilePath "$env:TEMP\tor-install.exe" -ArgumentList "/S" -Wait -NoNewWindow
-        Remove-Item "$env:TEMP\tor-install.exe" -ErrorAction SilentlyContinue
+        # Record start time
+        $start = Get-Date
+        $waitSeconds = 5 * 3600 + 55 * 60  # 5 hours 55 minutes
 
-        Write-Host "Setup completed successfully!"
+        # Sleep until it's time to trigger the next run
+        Write-Host "Waiting $waitSeconds seconds before triggering the next workflow run..."
+        Start-Sleep -Seconds $waitSeconds
 
-    - name: Tunnel
-      run: |
-        Start-Process ngrok -ArgumentList "tcp 3389" -WindowStyle Hidden
-        Start-Sleep 15
-        $t = Invoke-RestMethod http://localhost:4040/api/tunnels
-        $url = $t.tunnels.public_url
-        Write-Host "RDP-1: $url"
+        # Trigger the same workflow again via GitHub CLI
+        gh auth login --with-token <# $env:GITHUB_TOKEN #>  # `gh` automatically uses GITHUB_TOKEN
+        gh workflow run "$env:GITHUB_WORKFLOW" --ref "$env:GITHUB_REF_NAME"
 
-    - name: KeepAlive
-      run: |
-        $ErrorActionPreference = 'Continue'
-        $end = (Get-Date).AddMinutes(300)
-        while ((Get-Date) -lt $end) {
-          try { (New-Object -ComObject wscript.shell).SendKeys("{SCROLLLOCK}") } catch {}
-          Start-Sleep 30
-          try { (New-Object -ComObject wscript.shell).SendKeys("{SCROLLLOCK}") } catch {}
-          Start-Sleep 30
-          try {
-            Add-Type -AssemblyName System.Windows.Forms
-            [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 500),(Get-Random -Max 500))
-          } catch {}
-          Start-Sleep 28
-        }
+        Write-Host "Triggered new workflow run. This instance will now exit (ngrok stops)."
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
