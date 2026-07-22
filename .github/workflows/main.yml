@@ -10,7 +10,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 300
     steps:
-    - uses: actions/checkout@v4  # Node.js 20 warning is harmless, workflow still runs on Node 24
+    - uses: actions/checkout@v4
     - name: Setup
       run: |
         choco install ngrok -y
@@ -28,23 +28,14 @@ jobs:
         $t = Invoke-RestMethod http://localhost:4040/api/tunnels
         $url = $t.tunnels.public_url
         Write-Host "RDP-1: $url"
-        $bot = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
-        $chat = "${{ secrets.TELEGRAM_CHAT_ID }}"
-        $msg = "RDP-1 LIVE: $url`nUser: rdpuser`nPass: RDP@Password123`nDuration: 5H"
-        Invoke-RestMethod -Uri "https://api.telegram.org/bot$bot/sendMessage" -Method Post -Body @{chat_id=$chat;text=$msg}
     - name: KeepAlive
       run: |
         $ErrorActionPreference = 'Continue'
         $end = (Get-Date).AddMinutes(300)
         while ((Get-Date) -lt $end) {
-          try {
-            $w = New-Object -ComObject wscript.shell
-            $w.SendKeys("{SCROLLLOCK}")
-          } catch { }
+          try { $w = New-Object -ComObject wscript.shell; $w.SendKeys("{SCROLLLOCK}") } catch { }
           Start-Sleep 30
-          try {
-            $w.SendKeys("{SCROLLLOCK}")
-          } catch { }
+          try { $w.SendKeys("{SCROLLLOCK}") } catch { }
           Start-Sleep 30
           try {
             Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
@@ -80,10 +71,6 @@ jobs:
         $t = Invoke-RestMethod http://localhost:4040/api/tunnels
         $url = $t.tunnels.public_url
         Write-Host "RDP-2: $url"
-        $bot = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
-        $chat = "${{ secrets.TELEGRAM_CHAT_ID }}"
-        $msg = "RDP-2 LIVE: $url`nUser: rdpuser`nPass: RDP@Password123`nDuration: 5H"
-        Invoke-RestMethod -Uri "https://api.telegram.org/bot$bot/sendMessage" -Method Post -Body @{chat_id=$chat;text=$msg}
     - name: KeepAlive
       run: |
         $ErrorActionPreference = 'Continue'
@@ -127,10 +114,6 @@ jobs:
         $t = Invoke-RestMethod http://localhost:4040/api/tunnels
         $url = $t.tunnels.public_url
         Write-Host "RDP-3: $url"
-        $bot = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
-        $chat = "${{ secrets.TELEGRAM_CHAT_ID }}"
-        $msg = "RDP-3 LIVE: $url`nUser: rdpuser`nPass: RDP@Password123`nDuration: 5H"
-        Invoke-RestMethod -Uri "https://api.telegram.org/bot$bot/sendMessage" -Method Post -Body @{chat_id=$chat;text=$msg}
     - name: KeepAlive
       run: |
         $ErrorActionPreference = 'Continue'
@@ -174,10 +157,6 @@ jobs:
         $t = Invoke-RestMethod http://localhost:4040/api/tunnels
         $url = $t.tunnels.public_url
         Write-Host "RDP-4: $url"
-        $bot = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
-        $chat = "${{ secrets.TELEGRAM_CHAT_ID }}"
-        $msg = "RDP-4 LIVE: $url`nUser: rdpuser`nPass: RDP@Password123`nDuration: 5H"
-        Invoke-RestMethod -Uri "https://api.telegram.org/bot$bot/sendMessage" -Method Post -Body @{chat_id=$chat;text=$msg}
     - name: KeepAlive
       run: |
         $ErrorActionPreference = 'Continue'
