@@ -18,14 +18,12 @@ jobs:
         ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        # Disable NLA, allow blank password RDP
         Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 0
         New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'LimitBlankPasswordUse' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
 
         # ---- User Setup (Administrator, blank password) ----
-        $pass = ConvertTo-SecureString "" -AsPlainText -Force
-        Enable-LocalUser -Name "Administrator" -ErrorAction SilentlyContinue
-        Set-LocalUser -Name "Administrator" -Password $pass -ErrorAction SilentlyContinue
+        net user Administrator "" > $null 2>&1
+        net user Administrator /active:yes > $null 2>&1
         Add-LocalGroupMember -Group "Remote Desktop Users" -Member "Administrator" -ErrorAction SilentlyContinue
         Add-LocalGroupMember -Group "Administrators" -Member "Administrator" -ErrorAction SilentlyContinue
 
@@ -38,20 +36,16 @@ jobs:
         Set-ItemProperty -Path $winlogon -Name ForceAutoLogon -Value "1"
 
         # ---- Remove Watermarks ----
-        # PaintDesktopVersion (build text)
         reg add "HKCU\Control Panel\Desktop" /v PaintDesktopVersion /t REG_DWORD /d 0 /f
         reg add "HKU\.DEFAULT\Control Panel\Desktop" /v PaintDesktopVersion /t REG_DWORD /d 0 /f
-        # Test mode off
         try { bcdedit /set TESTSIGNING OFF } catch { }
-        # Hide activation/evaluation watermark (kills the popup, may help)
-        reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SoftwareProtectionPlatform" /v "NoAutoActivate" /t REG_DWORD /d 1 /f
 
-        # ---- Download & Force Wallpaper ----
+        # ---- Wallpaper ----
         $img = "C:\wallpaper.jpg"
         Invoke-WebRequest -Uri "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1920&q=80" -OutFile $img -ErrorAction SilentlyContinue
         if (Test-Path $img) {
             Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name Wallpaper -Value $img -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name WallpaperStyle -Value "2" -ErrorAction SilentlyContinue   # Stretch
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name WallpaperStyle -Value "2" -ErrorAction SilentlyContinue
         }
 
     - name: Tunnel
@@ -95,9 +89,8 @@ jobs:
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 0
         New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'LimitBlankPasswordUse' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-        $pass = ConvertTo-SecureString "" -AsPlainText -Force
-        Enable-LocalUser -Name "Administrator" -ErrorAction SilentlyContinue
-        Set-LocalUser -Name "Administrator" -Password $pass -ErrorAction SilentlyContinue
+        net user Administrator "" > $null 2>&1
+        net user Administrator /active:yes > $null 2>&1
         Add-LocalGroupMember -Group "Remote Desktop Users" -Member "Administrator" -ErrorAction SilentlyContinue
         Add-LocalGroupMember -Group "Administrators" -Member "Administrator" -ErrorAction SilentlyContinue
         $winlogon = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
@@ -156,9 +149,8 @@ jobs:
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 0
         New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'LimitBlankPasswordUse' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-        $pass = ConvertTo-SecureString "" -AsPlainText -Force
-        Enable-LocalUser -Name "Administrator" -ErrorAction SilentlyContinue
-        Set-LocalUser -Name "Administrator" -Password $pass -ErrorAction SilentlyContinue
+        net user Administrator "" > $null 2>&1
+        net user Administrator /active:yes > $null 2>&1
         Add-LocalGroupMember -Group "Remote Desktop Users" -Member "Administrator" -ErrorAction SilentlyContinue
         Add-LocalGroupMember -Group "Administrators" -Member "Administrator" -ErrorAction SilentlyContinue
         $winlogon = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
@@ -217,9 +209,8 @@ jobs:
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 0
         New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'LimitBlankPasswordUse' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-        $pass = ConvertTo-SecureString "" -AsPlainText -Force
-        Enable-LocalUser -Name "Administrator" -ErrorAction SilentlyContinue
-        Set-LocalUser -Name "Administrator" -Password $pass -ErrorAction SilentlyContinue
+        net user Administrator "" > $null 2>&1
+        net user Administrator /active:yes > $null 2>&1
         Add-LocalGroupMember -Group "Remote Desktop Users" -Member "Administrator" -ErrorAction SilentlyContinue
         Add-LocalGroupMember -Group "Administrators" -Member "Administrator" -ErrorAction SilentlyContinue
         $winlogon = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
