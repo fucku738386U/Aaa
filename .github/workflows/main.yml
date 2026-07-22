@@ -1,0 +1,187 @@
+name: 20H Ngrok RDP
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */20 * * *'
+
+jobs:
+  rdp-1:
+    runs-on: windows-latest
+    timeout-minutes: 300
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup
+      run: |
+        choco install ngrok -y
+        ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        $pass = ConvertTo-SecureString "RDP@Password123" -AsPlainText -Force
+        New-LocalUser -Name "rdpuser" -Password $pass -FullName "RDP" -Description "RDP" -ErrorAction SilentlyContinue
+        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "rdpuser" -ErrorAction SilentlyContinue
+        Add-LocalGroupMember -Group "Administrators" -Member "rdpuser" -ErrorAction SilentlyContinue
+    - name: Tunnel
+      run: |
+        Start-Process ngrok -ArgumentList "tcp 3389" -WindowStyle Hidden
+        Start-Sleep 15
+        $t = Invoke-RestMethod http://localhost:4040/api/tunnels
+        $url = $t.tunnels.public_url
+        Write-Host "RDP-1: $url"
+        $bot = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+        $chat = "${{ secrets.TELEGRAM_CHAT_ID }}"
+        $msg = "RDP-1 LIVE: $url`nUser: rdpuser`nPass: RDP@Password123`nDuration: 5H"
+        Invoke-RestMethod -Uri "https://api.telegram.org/bot$bot/sendMessage" -Method Post -Body @{chat_id=$chat;text=$msg}
+    - name: KeepAlive
+      run: |
+        $end = (Get-Date).AddMinutes(300)
+        while ((Get-Date) -lt $end) {
+          $w = New-Object -ComObject wscript.shell
+          $w.SendKeys("{SCROLLLOCK}")
+          Start-Sleep 30
+          $w.SendKeys("{SCROLLLOCK}")
+          Start-Sleep 30
+          # Mouse jitter
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 100),(Get-Random -Max 100))
+          Start-Sleep 1
+          [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 500),(Get-Random -Max 500))
+          Start-Sleep 28
+        }
+
+  rdp-2:
+    runs-on: windows-latest
+    timeout-minutes: 300
+    needs: rdp-1
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup
+      run: |
+        choco install ngrok -y
+        ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        $pass = ConvertTo-SecureString "RDP@Password123" -AsPlainText -Force
+        New-LocalUser -Name "rdpuser" -Password $pass -FullName "RDP" -Description "RDP" -ErrorAction SilentlyContinue
+        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "rdpuser" -ErrorAction SilentlyContinue
+        Add-LocalGroupMember -Group "Administrators" -Member "rdpuser" -ErrorAction SilentlyContinue
+    - name: Tunnel
+      run: |
+        Start-Process ngrok -ArgumentList "tcp 3389" -WindowStyle Hidden
+        Start-Sleep 15
+        $t = Invoke-RestMethod http://localhost:4040/api/tunnels
+        $url = $t.tunnels.public_url
+        Write-Host "RDP-2: $url"
+        $bot = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+        $chat = "${{ secrets.TELEGRAM_CHAT_ID }}"
+        $msg = "RDP-2 LIVE: $url`nUser: rdpuser`nPass: RDP@Password123`nDuration: 5H"
+        Invoke-RestMethod -Uri "https://api.telegram.org/bot$bot/sendMessage" -Method Post -Body @{chat_id=$chat;text=$msg}
+    - name: KeepAlive
+      run: |
+        $end = (Get-Date).AddMinutes(300)
+        while ((Get-Date) -lt $end) {
+          $w = New-Object -ComObject wscript.shell
+          $w.SendKeys("{SCROLLLOCK}")
+          Start-Sleep 30
+          $w.SendKeys("{SCROLLLOCK}")
+          Start-Sleep 30
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 100),(Get-Random -Max 100))
+          Start-Sleep 1
+          [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 500),(Get-Random -Max 500))
+          Start-Sleep 28
+        }
+
+  rdp-3:
+    runs-on: windows-latest
+    timeout-minutes: 300
+    needs: rdp-2
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup
+      run: |
+        choco install ngrok -y
+        ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        $pass = ConvertTo-SecureString "RDP@Password123" -AsPlainText -Force
+        New-LocalUser -Name "rdpuser" -Password $pass -FullName "RDP" -Description "RDP" -ErrorAction SilentlyContinue
+        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "rdpuser" -ErrorAction SilentlyContinue
+        Add-LocalGroupMember -Group "Administrators" -Member "rdpuser" -ErrorAction SilentlyContinue
+    - name: Tunnel
+      run: |
+        Start-Process ngrok -ArgumentList "tcp 3389" -WindowStyle Hidden
+        Start-Sleep 15
+        $t = Invoke-RestMethod http://localhost:4040/api/tunnels
+        $url = $t.tunnels.public_url
+        Write-Host "RDP-3: $url"
+        $bot = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+        $chat = "${{ secrets.TELEGRAM_CHAT_ID }}"
+        $msg = "RDP-3 LIVE: $url`nUser: rdpuser`nPass: RDP@Password123`nDuration: 5H"
+        Invoke-RestMethod -Uri "https://api.telegram.org/bot$bot/sendMessage" -Method Post -Body @{chat_id=$chat;text=$msg}
+    - name: KeepAlive
+      run: |
+        $end = (Get-Date).AddMinutes(300)
+        while ((Get-Date) -lt $end) {
+          $w = New-Object -ComObject wscript.shell
+          $w.SendKeys("{SCROLLLOCK}")
+          Start-Sleep 30
+          $w.SendKeys("{SCROLLLOCK}")
+          Start-Sleep 30
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 100),(Get-Random -Max 100))
+          Start-Sleep 1
+          [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 500),(Get-Random -Max 500))
+          Start-Sleep 28
+        }
+
+  rdp-4:
+    runs-on: windows-latest
+    timeout-minutes: 300
+    needs: rdp-3
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup
+      run: |
+        choco install ngrok -y
+        ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        $pass = ConvertTo-SecureString "RDP@Password123" -AsPlainText -Force
+        New-LocalUser -Name "rdpuser" -Password $pass -FullName "RDP" -Description "RDP" -ErrorAction SilentlyContinue
+        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "rdpuser" -ErrorAction SilentlyContinue
+        Add-LocalGroupMember -Group "Administrators" -Member "rdpuser" -ErrorAction SilentlyContinue
+    - name: Tunnel
+      run: |
+        Start-Process ngrok -ArgumentList "tcp 3389" -WindowStyle Hidden
+        Start-Sleep 15
+        $t = Invoke-RestMethod http://localhost:4040/api/tunnels
+        $url = $t.tunnels.public_url
+        Write-Host "RDP-4: $url"
+        $bot = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+        $chat = "${{ secrets.TELEGRAM_CHAT_ID }}"
+        $msg = "RDP-4 LIVE: $url`nUser: rdpuser`nPass: RDP@Password123`nDuration: 5H"
+        Invoke-RestMethod -Uri "https://api.telegram.org/bot$bot/sendMessage" -Method Post -Body @{chat_id=$chat;text=$msg}
+    - name: KeepAlive
+      run: |
+        $end = (Get-Date).AddMinutes(300)
+        while ((Get-Date) -lt $end) {
+          $w = New-Object -ComObject wscript.shell
+          $w.SendKeys("{SCROLLLOCK}")
+          Start-Sleep 30
+          $w.SendKeys("{SCROLLLOCK}")
+          Start-Sleep 30
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 100),(Get-Random -Max 100))
+          Start-Sleep 1
+          [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 500),(Get-Random -Max 500))
+          Start-Sleep 28
+        }
+    - name: Next Cycle
+      if: always()
+      run: |
+        $headers = @{Authorization = "token ${{ secrets.GH_PAT }}"; Accept = "application/vnd.github.v3+json"}
+        $body = @{ref = "main"} | ConvertTo-Json
+        Invoke-RestMethod -Uri "https://api.github.com/repos/${{ github.repository }}/actions/workflows/20h-rdp.yml/dispatches" -Method Post -Headers $headers -Body $body
