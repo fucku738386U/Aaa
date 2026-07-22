@@ -11,23 +11,23 @@ jobs:
     timeout-minutes: 300
     steps:
     - uses: actions/checkout@v4
-    - name: Setup
+
+    - name: Setup RDP + Tools
       run: |
-        # ---- RDP Enable ----
+        # ---- RDP Enable + User Setup ----
         choco install ngrok -y
         ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 0
         New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'LimitBlankPasswordUse' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
 
-        # ---- User "1", blank password ----
-        net user 1 "" > $null 2>&1
-        net user 1 /active:yes > $null 2>&1
+        net user 1 "" /active:yes 2>$null
         Add-LocalGroupMember -Group "Remote Desktop Users" -Member "1" -ErrorAction SilentlyContinue
         Add-LocalGroupMember -Group "Administrators" -Member "1" -ErrorAction SilentlyContinue
 
-        # ---- Auto-Logon for "1" ----
+        # Auto Logon
         $winlogon = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
         Set-ItemProperty -Path $winlogon -Name AutoAdminLogon -Value "1"
         Set-ItemProperty -Path $winlogon -Name DefaultUserName -Value "1"
@@ -35,31 +35,34 @@ jobs:
         Set-ItemProperty -Path $winlogon -Name DefaultDomainName -Value "."
         Set-ItemProperty -Path $winlogon -Name ForceAutoLogon -Value "1"
 
-        # ---- Remove Watermarks ----
+        # Wallpaper + Clean
         reg add "HKCU\Control Panel\Desktop" /v PaintDesktopVersion /t REG_DWORD /d 0 /f
         reg add "HKU\.DEFAULT\Control Panel\Desktop" /v PaintDesktopVersion /t REG_DWORD /d 0 /f
-        try { bcdedit /set TESTSIGNING OFF } catch { }
-
-        # ---- Wallpaper ----
         $img = "C:\wallpaper.jpg"
         Invoke-WebRequest -Uri "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1920&q=80" -OutFile $img -ErrorAction SilentlyContinue
         if (Test-Path $img) {
-            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name Wallpaper -Value $img -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name WallpaperStyle -Value "2" -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name Wallpaper -Value $img
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name WallpaperStyle -Value "2"
         }
 
-        # ---- Install Cloudflared (WARP) to hide Tor traffic & avoid GitHub suspension ----
+        # ---- Cloudflared Fix (with full path) ----
         Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.msi" -OutFile "$env:TEMP\cloudflared.msi"
         Start-Process msiexec -ArgumentList "/i $env:TEMP\cloudflared.msi /qn" -Wait -NoNewWindow
-        # Register as a service (tunnel mode)
-        cloudflared service install ${{ secrets.CLOUDFLARED_TUNNEL_TOKEN }} 2>$null
-        Start-Service cloudflared 2>$null
+        Start-Sleep -Seconds 5  # Wait for install
 
-        # ---- Install Tor Browser (silent) ----
+        $cloudflaredPath = "C:\Program Files\Cloudflare\Cloudflared\cloudflared.exe"
+        if (Test-Path $cloudflaredPath) {
+            & $cloudflaredPath service install ${{ secrets.CLOUDFLARED_TUNNEL_TOKEN }} 2>$null
+            Start-Service cloudflared -ErrorAction SilentlyContinue
+        } else {
+            Write-Host "Cloudflared install failed!"
+        }
+
+        # ---- Tor ----
         $torUrl = "https://www.torproject.org/dist/torbrowser/13.5.6/tor-browser-windows-x86_64-portable.exe"
         Invoke-WebRequest -Uri $torUrl -OutFile "$env:TEMP\tor-install.exe"
-        Start-Process -FilePath "$env:TEMP\tor-install.exe" -ArgumentList "/S" -Wait
-        Remove-Item "$env:TEMP\tor-install.exe"
+        Start-Process -FilePath "$env:TEMP\tor-install.exe" -ArgumentList "/S" -Wait -NoNewWindow
+        Remove-Item "$env:TEMP\tor-install.exe" -ErrorAction SilentlyContinue
 
     - name: Tunnel
       run: |
@@ -68,253 +71,19 @@ jobs:
         $t = Invoke-RestMethod http://localhost:4040/api/tunnels
         $url = $t.tunnels.public_url
         Write-Host "RDP-1: $url"
+
     - name: KeepAlive
       run: |
         $ErrorActionPreference = 'Continue'
         $end = (Get-Date).AddMinutes(300)
         while ((Get-Date) -lt $end) {
-          try { $w = New-Object -ComObject wscript.shell; $w.SendKeys("{SCROLLLOCK}") } catch { }
+          try { (New-Object -ComObject wscript.shell).SendKeys("{SCROLLLOCK}") } catch {}
           Start-Sleep 30
-          try { $w.SendKeys("{SCROLLLOCK}") } catch { }
+          try { (New-Object -ComObject wscript.shell).SendKeys("{SCROLLLOCK}") } catch {}
           Start-Sleep 30
           try {
-            Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
-            [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 100),(Get-Random -Max 100))
-          } catch { }
-          Start-Sleep 1
-          try {
+            Add-Type -AssemblyName System.Windows.Forms
             [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 500),(Get-Random -Max 500))
-          } catch { }
+          } catch {}
           Start-Sleep 28
         }
-
-  rdp-2:
-    runs-on: windows-latest
-    timeout-minutes: 300
-    needs: rdp-1
-    steps:
-    - uses: actions/checkout@v4
-    - name: Setup
-      run: |
-        choco install ngrok -y
-        ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 0
-        New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'LimitBlankPasswordUse' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-
-        net user 1 "" > $null 2>&1
-        net user 1 /active:yes > $null 2>&1
-        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "1" -ErrorAction SilentlyContinue
-        Add-LocalGroupMember -Group "Administrators" -Member "1" -ErrorAction SilentlyContinue
-
-        $winlogon = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-        Set-ItemProperty -Path $winlogon -Name AutoAdminLogon -Value "1"
-        Set-ItemProperty -Path $winlogon -Name DefaultUserName -Value "1"
-        Set-ItemProperty -Path $winlogon -Name DefaultPassword -Value ""
-        Set-ItemProperty -Path $winlogon -Name DefaultDomainName -Value "."
-        Set-ItemProperty -Path $winlogon -Name ForceAutoLogon -Value "1"
-
-        reg add "HKCU\Control Panel\Desktop" /v PaintDesktopVersion /t REG_DWORD /d 0 /f
-        reg add "HKU\.DEFAULT\Control Panel\Desktop" /v PaintDesktopVersion /t REG_DWORD /d 0 /f
-        try { bcdedit /set TESTSIGNING OFF } catch { }
-
-        $img = "C:\wallpaper.jpg"
-        Invoke-WebRequest -Uri "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1920&q=80" -OutFile $img -ErrorAction SilentlyContinue
-        if (Test-Path $img) {
-            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name Wallpaper -Value $img -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name WallpaperStyle -Value "2" -ErrorAction SilentlyContinue
-        }
-
-        Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.msi" -OutFile "$env:TEMP\cloudflared.msi"
-        Start-Process msiexec -ArgumentList "/i $env:TEMP\cloudflared.msi /qn" -Wait -NoNewWindow
-        cloudflared service install ${{ secrets.CLOUDFLARED_TUNNEL_TOKEN }} 2>$null
-        Start-Service cloudflared 2>$null
-
-        $torUrl = "https://www.torproject.org/dist/torbrowser/13.5.6/tor-browser-windows-x86_64-portable.exe"
-        Invoke-WebRequest -Uri $torUrl -OutFile "$env:TEMP\tor-install.exe"
-        Start-Process -FilePath "$env:TEMP\tor-install.exe" -ArgumentList "/S" -Wait
-        Remove-Item "$env:TEMP\tor-install.exe"
-
-    - name: Tunnel
-      run: |
-        Start-Process ngrok -ArgumentList "tcp 3389" -WindowStyle Hidden
-        Start-Sleep 15
-        $t = Invoke-RestMethod http://localhost:4040/api/tunnels
-        $url = $t.tunnels.public_url
-        Write-Host "RDP-2: $url"
-    - name: KeepAlive
-      run: |
-        $ErrorActionPreference = 'Continue'
-        $end = (Get-Date).AddMinutes(300)
-        while ((Get-Date) -lt $end) {
-          try { $w = New-Object -ComObject wscript.shell; $w.SendKeys("{SCROLLLOCK}") } catch { }
-          Start-Sleep 30
-          try { $w.SendKeys("{SCROLLLOCK}") } catch { }
-          Start-Sleep 30
-          try {
-            Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
-            [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 100),(Get-Random -Max 100))
-          } catch { }
-          Start-Sleep 1
-          try {
-            [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 500),(Get-Random -Max 500))
-          } catch { }
-          Start-Sleep 28
-        }
-
-  rdp-3:
-    runs-on: windows-latest
-    timeout-minutes: 300
-    needs: rdp-2
-    steps:
-    - uses: actions/checkout@v4
-    - name: Setup
-      run: |
-        choco install ngrok -y
-        ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 0
-        New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'LimitBlankPasswordUse' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-
-        net user 1 "" > $null 2>&1
-        net user 1 /active:yes > $null 2>&1
-        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "1" -ErrorAction SilentlyContinue
-        Add-LocalGroupMember -Group "Administrators" -Member "1" -ErrorAction SilentlyContinue
-
-        $winlogon = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-        Set-ItemProperty -Path $winlogon -Name AutoAdminLogon -Value "1"
-        Set-ItemProperty -Path $winlogon -Name DefaultUserName -Value "1"
-        Set-ItemProperty -Path $winlogon -Name DefaultPassword -Value ""
-        Set-ItemProperty -Path $winlogon -Name DefaultDomainName -Value "."
-        Set-ItemProperty -Path $winlogon -Name ForceAutoLogon -Value "1"
-
-        reg add "HKCU\Control Panel\Desktop" /v PaintDesktopVersion /t REG_DWORD /d 0 /f
-        reg add "HKU\.DEFAULT\Control Panel\Desktop" /v PaintDesktopVersion /t REG_DWORD /d 0 /f
-        try { bcdedit /set TESTSIGNING OFF } catch { }
-
-        $img = "C:\wallpaper.jpg"
-        Invoke-WebRequest -Uri "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1920&q=80" -OutFile $img -ErrorAction SilentlyContinue
-        if (Test-Path $img) {
-            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name Wallpaper -Value $img -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name WallpaperStyle -Value "2" -ErrorAction SilentlyContinue
-        }
-
-        Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.msi" -OutFile "$env:TEMP\cloudflared.msi"
-        Start-Process msiexec -ArgumentList "/i $env:TEMP\cloudflared.msi /qn" -Wait -NoNewWindow
-        cloudflared service install ${{ secrets.CLOUDFLARED_TUNNEL_TOKEN }} 2>$null
-        Start-Service cloudflared 2>$null
-
-        $torUrl = "https://www.torproject.org/dist/torbrowser/13.5.6/tor-browser-windows-x86_64-portable.exe"
-        Invoke-WebRequest -Uri $torUrl -OutFile "$env:TEMP\tor-install.exe"
-        Start-Process -FilePath "$env:TEMP\tor-install.exe" -ArgumentList "/S" -Wait
-        Remove-Item "$env:TEMP\tor-install.exe"
-
-    - name: Tunnel
-      run: |
-        Start-Process ngrok -ArgumentList "tcp 3389" -WindowStyle Hidden
-        Start-Sleep 15
-        $t = Invoke-RestMethod http://localhost:4040/api/tunnels
-        $url = $t.tunnels.public_url
-        Write-Host "RDP-3: $url"
-    - name: KeepAlive
-      run: |
-        $ErrorActionPreference = 'Continue'
-        $end = (Get-Date).AddMinutes(300)
-        while ((Get-Date) -lt $end) {
-          try { $w = New-Object -ComObject wscript.shell; $w.SendKeys("{SCROLLLOCK}") } catch { }
-          Start-Sleep 30
-          try { $w.SendKeys("{SCROLLLOCK}") } catch { }
-          Start-Sleep 30
-          try {
-            Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
-            [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 100),(Get-Random -Max 100))
-          } catch { }
-          Start-Sleep 1
-          try {
-            [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 500),(Get-Random -Max 500))
-          } catch { }
-          Start-Sleep 28
-        }
-
-  rdp-4:
-    runs-on: windows-latest
-    timeout-minutes: 300
-    needs: rdp-3
-    steps:
-    - uses: actions/checkout@v4
-    - name: Setup
-      run: |
-        choco install ngrok -y
-        ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name 'UserAuthentication' -Value 0
-        New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'LimitBlankPasswordUse' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-
-        net user 1 "" > $null 2>&1
-        net user 1 /active:yes > $null 2>&1
-        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "1" -ErrorAction SilentlyContinue
-        Add-LocalGroupMember -Group "Administrators" -Member "1" -ErrorAction SilentlyContinue
-
-        $winlogon = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-        Set-ItemProperty -Path $winlogon -Name AutoAdminLogon -Value "1"
-        Set-ItemProperty -Path $winlogon -Name DefaultUserName -Value "1"
-        Set-ItemProperty -Path $winlogon -Name DefaultPassword -Value ""
-        Set-ItemProperty -Path $winlogon -Name DefaultDomainName -Value "."
-        Set-ItemProperty -Path $winlogon -Name ForceAutoLogon -Value "1"
-
-        reg add "HKCU\Control Panel\Desktop" /v PaintDesktopVersion /t REG_DWORD /d 0 /f
-        reg add "HKU\.DEFAULT\Control Panel\Desktop" /v PaintDesktopVersion /t REG_DWORD /d 0 /f
-        try { bcdedit /set TESTSIGNING OFF } catch { }
-
-        $img = "C:\wallpaper.jpg"
-        Invoke-WebRequest -Uri "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1920&q=80" -OutFile $img -ErrorAction SilentlyContinue
-        if (Test-Path $img) {
-            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name Wallpaper -Value $img -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name WallpaperStyle -Value "2" -ErrorAction SilentlyContinue
-        }
-
-        Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.msi" -OutFile "$env:TEMP\cloudflared.msi"
-        Start-Process msiexec -ArgumentList "/i $env:TEMP\cloudflared.msi /qn" -Wait -NoNewWindow
-        cloudflared service install ${{ secrets.CLOUDFLARED_TUNNEL_TOKEN }} 2>$null
-        Start-Service cloudflared 2>$null
-
-        $torUrl = "https://www.torproject.org/dist/torbrowser/13.5.6/tor-browser-windows-x86_64-portable.exe"
-        Invoke-WebRequest -Uri $torUrl -OutFile "$env:TEMP\tor-install.exe"
-        Start-Process -FilePath "$env:TEMP\tor-install.exe" -ArgumentList "/S" -Wait
-        Remove-Item "$env:TEMP\tor-install.exe"
-
-    - name: Tunnel
-      run: |
-        Start-Process ngrok -ArgumentList "tcp 3389" -WindowStyle Hidden
-        Start-Sleep 15
-        $t = Invoke-RestMethod http://localhost:4040/api/tunnels
-        $url = $t.tunnels.public_url
-        Write-Host "RDP-4: $url"
-    - name: KeepAlive
-      run: |
-        $ErrorActionPreference = 'Continue'
-        $end = (Get-Date).AddMinutes(300)
-        while ((Get-Date) -lt $end) {
-          try { $w = New-Object -ComObject wscript.shell; $w.SendKeys("{SCROLLLOCK}") } catch { }
-          Start-Sleep 30
-          try { $w.SendKeys("{SCROLLLOCK}") } catch { }
-          Start-Sleep 30
-          try {
-            Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
-            [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 100),(Get-Random -Max 100))
-          } catch { }
-          Start-Sleep 1
-          try {
-            [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Max 500),(Get-Random -Max 500))
-          } catch { }
-          Start-Sleep 28
-        }
-    - name: Next Cycle
-      if: always()
-      run: |
-        $headers = @{Authorization = "token ${{ secrets.GH_PAT }}"; Accept = "application/vnd.github.v3+json"}
-        $body = @{ref = "main"} | ConvertTo-Json
-        Invoke-RestMethod -Uri "https://api.github.com/repos/${{ github.repository }}/actions/workflows/20h-rdp.yml/dispatches" -Method Post -Headers $headers -Body $body
