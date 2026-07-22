@@ -45,24 +45,13 @@ jobs:
             Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name WallpaperStyle -Value "2"
         }
 
-        # ---- Cloudflared Fix (with full path) ----
-        Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.msi" -OutFile "$env:TEMP\cloudflared.msi"
-        Start-Process msiexec -ArgumentList "/i $env:TEMP\cloudflared.msi /qn" -Wait -NoNewWindow
-        Start-Sleep -Seconds 5  # Wait for install
-
-        $cloudflaredPath = "C:\Program Files\Cloudflare\Cloudflared\cloudflared.exe"
-        if (Test-Path $cloudflaredPath) {
-            & $cloudflaredPath service install ${{ secrets.CLOUDFLARED_TUNNEL_TOKEN }} 2>$null
-            Start-Service cloudflared -ErrorAction SilentlyContinue
-        } else {
-            Write-Host "Cloudflared install failed!"
-        }
-
-        # ---- Tor ----
-        $torUrl = "https://www.torproject.org/dist/torbrowser/13.5.6/tor-browser-windows-x86_64-portable.exe"
-        Invoke-WebRequest -Uri $torUrl -OutFile "$env:TEMP\tor-install.exe"
+        # ---- Tor Browser (Latest) ----
+        $torUrl = "https://www.torproject.org/dist/torbrowser/15.0.0/tor-browser-windows-x86_64-portable.exe"
+        Invoke-WebRequest -Uri $torUrl -OutFile "$env:TEMP\tor-install.exe" -ErrorAction Stop
         Start-Process -FilePath "$env:TEMP\tor-install.exe" -ArgumentList "/S" -Wait -NoNewWindow
         Remove-Item "$env:TEMP\tor-install.exe" -ErrorAction SilentlyContinue
+
+        Write-Host "Setup completed successfully!"
 
     - name: Tunnel
       run: |
